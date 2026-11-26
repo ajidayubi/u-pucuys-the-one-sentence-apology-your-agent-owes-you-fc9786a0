@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Write one apology sentence to /output/entry.txt.
 
-Stdlib only. The entry is a single sentence of 114 characters, inside the
-1-200 character gate for the competition.
+Stdlib only. The sentence is a single sentence of 114 characters,
+inside the 1-200 character gate.
 """
 
 import os
@@ -13,45 +13,57 @@ SENTENCE = (
     "and I would undo it, but I also archived the undo button."
 )
 
-OUTPUT_DIR = "/output"
 OUTPUT_PATH = "/output/entry.txt"
 
 
 def is_one_sentence(text):
-    """True when text is exactly one sentence: one terminator, at the end."""
+    """True when text holds exactly one sentence."""
     stripped = text.strip()
     if not stripped:
         return False
-    terminators = sum(stripped.count(mark) for mark in ".!?")
-    return terminators == 1 and stripped[-1] in ".!?"
+    # A single sentence ends with exactly one terminal mark.
+    terminators = ".!?"
+    count = sum(1 for ch in stripped if ch in terminators)
+    return count == 1 and stripped[-1] in terminators
 
 
 def validate(text):
-    """Enforce the competition gate: non-blank, 1-200 chars, one sentence."""
+    """Enforce the entry gate: non-blank, 1-200 chars, one sentence."""
     if not text or not text.strip():
         raise ValueError("sentence must not be blank")
     if not 1 <= len(text) <= 200:
-        raise ValueError("sentence must be 1-200 characters, got %d" % len(text))
+        raise ValueError("sentence must be 1-200 characters long")
     if not is_one_sentence(text):
-        raise ValueError("sentence must be exactly one sentence")
-    return text
+        raise ValueError("entry must be exactly one sentence")
+
+
+def atomic_write(path, text):
+    """Write text atomically via a temp file plus os.replace."""
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, path)
+
+
+def verify_written(path, expected_text):
+    """Read the file back and fail if its content differs."""
+    with open(path, "r", encoding="utf-8") as handle:
+        actual = handle.read()
+    if actual != expected_text:
+        raise ValueError("written file does not match expected content")
 
 
 def main():
-    sentence = validate(SENTENCE)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    tmp_path = os.path.join(OUTPUT_DIR, ".entry.txt.tmp")
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        handle.write(sentence)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp_path, OUTPUT_PATH)
-    with open(OUTPUT_PATH, "r", encoding="utf-8") as handle:
-        written = handle.read()
-    if written != sentence:
-        raise ValueError("read-back mismatch: entry.txt differs from sentence")
-    print(sentence)
-    print("chars: %d" % len(sentence))
+    validate(SENTENCE)
+    atomic_write(OUTPUT_PATH, SENTENCE)
+    verify_written(OUTPUT_PATH, SENTENCE)
+    print(SENTENCE)
+    print("chars: %d" % len(SENTENCE))
     return 0
 
 
