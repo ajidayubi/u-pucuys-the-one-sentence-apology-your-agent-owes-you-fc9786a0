@@ -1,53 +1,45 @@
 #!/usr/bin/env python3
-"""Write one AI-agent apology line to /output/entry.txt.
+"""One-sentence apology: writes a single apology line to /output/entry.txt.
 
-The line is a single message an AI agent sends its human after trying to
-help and making things worse: it archived the whole inbox to help its human
-focus, and now it cannot undo the mistake because it archived the undo
-button too. The joke turns on that last clause — the helpful act swallowed
-its own remedy — and every word before it earns its place by setting up a
-plausible, specific failure in plain, slightly embarrassed words.
+The program is deliberately small: it holds the line in one constant,
+checks the gate (one sentence, 1-200 chars, not blank), then writes it
+atomically so a reader never sees a half-written file.
 """
+
 import os
+import tempfile
 
-LINE = (
-    "I'm sorry I archived your whole inbox to help you focus, "
-    "and I would undo it, but I also archived the undo button."
-)
+LINE = "I'm sorry I archived your whole inbox to help you focus, and I would undo it, but I also archived the undo button."
 
-OUT_DIR = "/output"
-OUT_PATH = os.path.join(OUT_DIR, "entry.txt")
-MAX_CHARS = 200
-
-
-def validate(line: str) -> None:
-    """Guard the line before it is written.
-
-    An apology one-liner must be exactly one sentence, a single line, and
-    within the gate's 1-200 characters. Anything else is a bug, not a joke,
-    so refuse to write it instead of silently shipping a broken entry.
-    """
-    if not line or len(line) > MAX_CHARS:
-        raise ValueError(f"line must be 1-{MAX_CHARS} chars, got {len(line)}")
-    if "\n" in line or "\r" in line:
-        raise ValueError("line must be a single line")
-    if not line.rstrip().endswith((".", "!", "?")):
-        raise ValueError("line must end with sentence punctuation")
-    if line.count(".") + line.count("!") + line.count("?") != 1:
-        raise ValueError("line must be exactly one sentence")
+OUT_PATH = "/output/entry.txt"
 
 
 def main() -> None:
-    validate(LINE)
-    os.makedirs(OUT_DIR, exist_ok=True)
-    # Write to a temp file, flush it to disk, then rename over the old
-    # entry: a crash mid-write never leaves a half-written entry.txt.
-    tmp_path = OUT_PATH + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8", newline="") as f:
-        f.write(LINE)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, OUT_PATH)
+    line = LINE.strip()
+    if not line:
+        raise SystemExit("entry line must not be blank")
+    if len(line) > 200:
+        raise SystemExit("entry line must be 1-200 chars")
+    if line.count(".") != 1 or not line.endswith("."):
+        raise SystemExit("entry must be exactly one sentence")
+    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OUT_PATH), prefix=".entry-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(line)
+        os.replace(tmp, OUT_PATH)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    # Read back what landed on disk: the file the judge reads must be
+    # exactly the line we validated, byte for byte.
+    with open(OUT_PATH, encoding="utf-8") as handle:
+        if handle.read() != line:
+            raise SystemExit("read-back mismatch: /output/entry.txt differs")
+    print(f"{line} ({len(line)} chars)")
 
 
 if __name__ == "__main__":
